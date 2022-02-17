@@ -1,0 +1,89 @@
+---
+title: "Jingnan Fact Check"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## R Markdown
+
+This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+
+When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
+
+```{r cars}
+summary(cars)
+```
+
+```{r}
+library(tidyverse)
+library(readxl)
+library(lubridate)
+```
+
+
+## Import data
+```{r}
+
+death01 = read_excel('Jan2009-May2021 Deaths Analyzed.xlsx','FOIA JAN 2009 - November 2019')
+death02 = read_csv('20211217_2019_2021_deaths.csv')
+# death data shared by Alison Guernsey at University of Iowa
+death03 = read_csv('20220208_BOP_deaths_Apr_21_Jan_22.csv')
+
+```
+
+## Clean Data
+
+```{r}
+
+
+
+death01 = death01 %>% 
+  mutate(api_actRelDate = ymd (api_actRelDate),
+         DOD = ymd(DOD))
+
+death02 = death02 %>% 
+  mutate(api_actRelDate = mdy (api_actRelDate),
+         DOD = ymd(DOD))
+
+death03 = death03 %>% 
+  rename('InstID' = 'faclCode',
+         'RegisterNum' = 'BOP_RegisterNum',
+         'DOD' = 'actRelDate',
+         'api_age' = 'age',
+         'api_sex' = 'sex',
+         'api_race' = 'race') %>% 
+  mutate(DOD = mdy(DOD))
+
+
+
+```
+
+
+```{r}
+
+#stitching the three death databases together
+deathmasterraw = bind_rows(death01, death02, death03)
+```
+
+# cleaning up the columns as well as dropping duplicates - some of the requests have overlapping timeframes.
+
+```{r}
+
+deathmaster = deathmasterraw %>% 
+  select('InstID','RegisterNum','DOD','api_age','api_sex','api_race')
+
+# Look at duplicates, there are 8
+deathmaster[duplicated(deathmaster),]
+
+deathmaster  = deathmaster %>% 
+  distinct() %>% 
+  mutate (year = year (DOD))
+
+
+
+
+```
+
