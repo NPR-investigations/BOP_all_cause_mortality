@@ -13,14 +13,17 @@ This is an R Markdown document. Markdown is a simple formatting syntax for autho
 
 When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
 
-```{r cars}
-summary(cars)
-```
+
 
 ```{r}
 library(tidyverse)
 library(readxl)
 library(lubridate)
+library(jsonlite)
+library(purrr)
+library(janitor)
+
+options(scipen = 100)
 ```
 
 
@@ -80,8 +83,455 @@ deathmaster[duplicated(deathmaster),]
 
 deathmaster  = deathmaster %>% 
   distinct() %>% 
-  mutate (year = year (DOD))
+  mutate (year = year(DOD))
 
+deathmaster %>% 
+  group_by(year) %>% 
+  count() %>% 
+  View()
+
+
+```
+
+```{r}
+
+path <- "./ucla_files"
+files <- dir(path, pattern = "*.json")
+fullfilesnames = list.files(path, pattern = "*json", full.names = TRUE)
+
+historical_fed_pop = files[1:129]
+fed_pop = files[130:296]
+
+myJSON <- lapply(fullfilesnames, function(x) fromJSON(x)) # a list in which each element is one of your original JSON files
+
+df_all_json = tibble()
+
+for (i in 1:length(myJSON)){
+  
+  df = myJSON[[i]]%>% 
+  enframe %>% 
+  pivot_wider(names_from = name, values_from = value)
+  
+  df_all_json = bind_rows(df_all_json, df)
+  
+  
+  
+}
+
+
+df_all_json = df_all_json %>% 
+  mutate(DATEMODIFIED = mdy(DATEMODIFIED)) %>% 
+  mutate(year = year(DATEMODIFIED))
+  
+
+mainframe = df_all_json %>% 
+  select(TOTALPOPULATION, BOPTOTAL, PRIVATETOTAL, DATEMODIFIED, year) %>% 
+  rename(total_population = TOTALPOPULATION, bop_population = BOPTOTAL, private_population = PRIVATETOTAL, date = DATEMODIFIED ) %>% 
+  mutate(population = as.numeric(bop_population))
+  
+
+bopfacmaster = tibble() 
+
+for (i in 1:nrow(df_all_json)){
+  
+  df = df_all_json[[9]][[i]]
+  year = df_all_json[[17]][[i]]
+  #print(year)
+  date_modified = df_all_json[[8]][[i]]
+  
+  df = df %>% 
+    mutate(year = year, DATEMODIFIED = date_modified)
+  
+  bopfacmaster = bind_rows(bopfacmaster, df)
+  
+  
+}
+  
+
+
+
+
+```
+
+
+## Examine bopfacmaster
+```{r}
+
+bopfacmaster_duplicated = bopfacmaster[duplicated(bopfacmaster),]
+
+counter = 0 
+for (i in 1:length(df_all_json)){
+  
+  df = df_all_json[[9]][[i]]
+  counter = counter + nrow(df)
+  
+  
+}
+
+counter
+  
+
+```
+
+```{r}
+
+bopfacmaster_unqiue = bopfacmaster %>% 
+  distinct()
+
+
+```
+
+
+```{r}
+
+bopfacmaster %>% 
+  distinct(year, code) %>% 
+  group_by(year, code) %>% 
+  count() %>%
+  ungroup() %>% 
+  group_by(year) %>% 
+  count() %>% 
+  View()
+
+bopfacmaster_2021 = bopfacmaster %>% 
+  filter(year == 2021)
+
+bopfacmaster_2022 = bopfacmaster %>% 
+  filter(year == 2022)
+
+missing_bop_code_2022 = anti_join(bopfacmaster_2021, bopfacmaster_2022, by = "code") # 	NYM
+
+bopcodes = unique(bopfacmaster$code)
+
+
+
+```
+
+
+```{r}
+# using the BOP codes to filter out deaths in these facilities
+
+deathmaster_bop = deathmaster %>% 
+  filter(InstID %in% bopcodes)
+
+unique(deathmaster_bop$InstID)
+
+bopcodes[!(bopcodes %in% unique(deathmaster_bop$InstID))]
+
+
+```
+## Ready to check BOP side
+
+
+```{r}
+
+agedist = read_excel('tabula-Age_BOP_FY2015-21_cleaned.xlsx')
+
+```
+
+```{r}
+
+
+reportcnt = agedist %>% 
+  group_by(year) %>% 
+  summarise(population = sum(Frequency)) %>% 
+  ungroup() %>% 
+  rowwise() %>% 
+  mutate(date_text = paste0('09/30/', toString(year))) %>% 
+  mutate(date = mdy(date_text))
+```
+
+```{r}
+
+# adding the BOP data to the UCLA data
+
+popdf = full_join(mainframe, reportcnt) %>% 
+  distinct()
+
+```
+```{r}
+# check to see if the two datasets form a smooth curve. 
+
+ggplot()+
+  geom_line(data = mainframe, aes(x = date, y = population))+
+  geom_point(data = reportcnt, aes(x = date, y = population))
+
+
+```
+```{r}
+interpolate_population = function(df, year_choice, mode){
+  
+  # df = popdf
+  # year_choice = 2016
+  # mode = "dec"
+  
+  df_current = df %>% 
+  filter(year == year_choice) %>% 
+  arrange(date)
+
+
+
+if (mode == "dec"){
+  
+  df_edge= df %>% 
+    filter(year == year_choice+1) %>% 
+    arrange(date) %>% 
+    slice_head()
+
+  df_current_edge = bind_rows(df_current, df_edge) %>% 
+    arrange(date) %>% 
+    slice(n() - 1,n()) %>% 
+    arrange(date) %>% 
+    mutate(x = c(0:1))
+  
+  first_day_next_year_date = df_current_edge %>% 
+    slice(2) %>% 
+    pull(date)
+  
+  last_day_this_year_date = df_current_edge %>% 
+    slice(1) %>% 
+    pull(date)
+  
+  # dec_31_this_year
+  edge_date_this_year = paste0( year_choice, "-12-31")
+  
+  
+  
+  # calculate delta of days between first date of next year and last date of this year
+  delta1 = as.numeric(difftime(ymd(first_day_next_year_date),
+                   ymd(last_day_this_year_date),
+                   units = "days"))
+  
+  # calculate delta of days between Dec 31 of this year and last date of this year
+  delta2 = as.numeric(difftime(ymd(edge_date_this_year),
+                   ymd(last_day_this_year_date),
+                   units = "days"))
+  
+  edge_position = delta2/delta1
+  
+  
+}
+
+if (mode == "jan"){
+  
+  df_edge= df %>% 
+    filter(year == year_choice - 1) %>% 
+    arrange(date) %>% 
+    slice_tail()
+  
+  df_current_edge = bind_rows(df_current, df_edge) %>% 
+    arrange(date) %>% 
+    slice(1,2) %>% 
+    arrange(date) %>% 
+    mutate(x = c(0:1))
+    
+  
+  # calculate delta of days between first date of this year and last date of last year
+  
+  first_day_this_year_date = df_current_edge %>% 
+    slice(2) %>% 
+    pull(date)
+  
+  
+  last_day_last_year_date = df_current_edge %>% 
+    slice(1) %>% 
+    pull(date) 
+  
+  # jan_1_this_year
+  edge_date_this_year = paste0(year_choice, "-01-01")
+  
+  # calculate delta of days between first date of this year and last date of last year
+  
+  delta1 = as.numeric(difftime(ymd(first_day_this_year_date),
+                   ymd(last_day_last_year_date),
+                   units = "days"))
+  
+  #calculate delta of days between Jan 1 of this year and last date of last year
+  
+  delta2 =as.numeric(difftime(ymd(edge_date_this_year),
+                   ymd(last_day_last_year_date),
+                   units = "days"))
+  
+  
+  edge_position = delta2/delta1
+  
+  
+}
+
+
+af <- approxfun(df_current_edge$x, df_current_edge$population)
+  
+edge_pop = af(edge_position)
+  
+df_edge_result = tibble(date = ymd(edge_date_this_year), 
+                          population = edge_pop)
+
+return(df_edge_result)
+  
+}
+```
+
+
+
+```{r}
+
+years  = c(2015:2021)
+
+
+df_bookends = tibble()
+
+for (year_choice in years){
+  
+  ## Interpolate for Dec 31
+  
+  check_dec_date = popdf %>% 
+    filter(year == year_choice) %>% 
+    arrange(date) %>% 
+    slice(n()) %>% 
+    pull(date)
+  
+  if (check_dec_date != paste0(year_choice, "-12-31")){
+    
+    dec_bookend = interpolate_population(popdf, year_choice, "dec")
+    df_bookends = bind_rows(df_bookends, dec_bookend)
+    
+    
+  }
+}
+
+
+  
+  ## Interpolate for Jan 1, for all months except for 2015 because there is not data for it, will need to extrapolate
+for (year_choice in years){
+  
+  check_jan_date = popdf %>% 
+    filter(year == year_choice) %>% 
+    arrange(date) %>% 
+    slice(1) %>% 
+    pull(date)
+  
+  if (year_choice == 2015) {
+    
+    last_day_this_year_date = popdf %>% 
+    filter(year == 2015) %>% 
+    arrange(date) %>% 
+    slice_tail() %>% 
+    pull(date)
+    
+    last_day_this_year_pop = popdf %>% 
+    filter(year == 2015) %>% 
+    arrange(date) %>% 
+    slice_tail() %>% 
+    pull(population)
+    
+    first_day_this_year_date = "2015-01-01"
+    
+    # calculate delta of days between first date of this year and beginning of this year 
+    delta1 = as.numeric(difftime(ymd(last_day_this_year_date),
+                   ymd(first_day_this_year_date),
+                   units = "days"))
+    
+    pos1 = delta1/365
+    
+    dec31val = interpolate_population(popdf, 2015, "dec") %>% 
+      pull(population)
+    
+    jan_extrapolate_date = tibble(
+      x= c(pos1, 1),
+      population = c(last_day_this_year_pop, dec31val)
+    )
+    
+    our_model = lm(population ~ x, data = jan_extrapolate_date)
+    jan1val = predict(our_model, newdata = data.frame(x = 0))
+    
+    jan_bookend = tibble( date = ymd(first_day_this_year_date),
+                          population = jan1val )
+     
+    df_bookends = bind_rows(df_bookends, jan_bookend)
+    
+    
+    
+    
+    
+  }
+  
+  else{
+    
+    if (check_dec_date != paste0(year_choice, "-01-01")){
+    
+    jan_bookend = interpolate_population(popdf, year_choice, "jan")
+    df_bookends = bind_rows(df_bookends, jan_bookend)
+    
+     }
+    
+  }
+    
+}
+
+
+df_bookends = df_bookends %>% 
+  mutate(year = year(date))
+
+popdf1 = bind_rows(popdf, df_bookends)
+
+  
+
+```
+
+
+```{r}
+# graph this out
+ggplot()+
+  geom_line(data = mainframe, aes(x = date, y = population))+
+  geom_point(data = reportcnt, aes(x = date, y = population))+
+  geom_point(data = df_bookends, aes(x = date, y = population, color = "red", label = "extrap and interp"))
+
+
+```
+```{r}
+#### Calcuate an average yearly population with existing data points
+
+tot_pop_by_day = popdf1 %>% 
+  arrange(date) %>% 
+  group_by(year) %>% 
+  mutate(avgpop = (population + lead(population)) / 2,
+         days = as.numeric(difftime(ymd(lead(date)),
+                   ymd(date),
+                   units = "days")) ) %>%
+  ungroup () %>% 
+  mutate(popbbydays = avgpop * days)
+
+avg_pop_df = tot_pop_by_day %>% 
+  group_by(year) %>% 
+  summarise(popbydays_total = sum(na.omit(popbbydays)),
+            days_in_year = sum(na.omit(days))) %>% 
+  ungroup() %>% 
+  mutate(days_in_year_correct = days_in_year + 1) %>% 
+  mutate(average_pop = popbydays_total / days_in_year_correct)
+
+
+
+
+```
+
+```{r}
+
+agedist = read_excel('tabula-Age_BOP_FY2015-21_cleaned.xlsx')
+
+agedist = agedist %>% 
+  group_by(year) %>% 
+  mutate(frequency_overall = sum(Frequency)) %>% 
+  ungroup() %>% 
+  mutate( percent = Frequency / frequency_overall) %>% 
+  select(-Percent) %>% 
+  clean_names() %>% 
+  rename(age_group = age)
+  mutate(age_group = str_squish(age_group)) %>% 
+  mutate(age_group = str_replace)
+
+
+
+  
 
 
 
