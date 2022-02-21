@@ -507,7 +507,8 @@ avg_pop_df = tot_pop_by_day %>%
             days_in_year = sum(na.omit(days))) %>% 
   ungroup() %>% 
   mutate(days_in_year_correct = days_in_year + 1) %>% 
-  mutate(average_pop = popbydays_total / days_in_year_correct)
+  mutate(average_pop = popbydays_total / days_in_year_correct) %>% 
+  select(year, average_pop)
 
 
 
@@ -525,14 +526,37 @@ agedist = agedist %>%
   mutate( percent = Frequency / frequency_overall) %>% 
   select(-Percent) %>% 
   clean_names() %>% 
-  rename(age_group = age)
-  mutate(age_group = str_squish(age_group)) %>% 
-  mutate(age_group = str_replace)
-
-
-
+  rename(age_group = age) %>% 
+  mutate(age_group = str_replace_all(age_group, ' ','')) %>% 
+  mutate(age_group = str_replace_all(age_group, '-','–')) %>% 
+  mutate(age_group = str_replace_all(age_group, '<=19','0–19'))
   
 
+
+
+agedist1 = left_join(agedist, avg_pop_df, by = "year")
+
+agegroups = agedist1 %>% 
+  distinct(age_group) %>% 
+  separate(age_group, c("min_age", "max_age"), "–", remove = FALSE) %>% mutate(min_age = as.numeric(min_age), max_age = as.numeric(max_age))
+
+
+bins = agegroups$min_age
+bins = c(bins, 10)
+age_labels = agegroups$age_group
+
+deathmaster_bop = deathmaster_bop %>% 
+  mutate(age_group = cut(api_age, breaks = bins, labels = age_labels, right = FALSE)) 
+
+
+
+```
+
+
+
+```{r}
+
+deathmaster_bop
 
 
 ```
