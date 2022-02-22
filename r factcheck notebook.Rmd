@@ -632,8 +632,31 @@ Compare 2020 to 2015-2019
 
 ```{r}
 yr20 = agedist2 %>% 
-  filter(year == 2020)
+  filter(year == 2020) %>% 
+  select(age_group, group_pop, deaths)
 
+std1 = left_join(std, yr20, by = "age_group")
+std1 = std1 %>% 
+  mutate(expected_deaths = group_pop * expected_death_rate)
+
+
+sum(na.omit(std1$deaths))/sum(na.omit(std1$expected_deaths))-1
+
+
+```
+
+```{r}
+
+yr21 = agedist2 %>% 
+  filter(year == 2021) %>% 
+  select(age_group, group_pop, deaths)
+
+std2 = left_join(std, yr21, by = "age_group")
+std2 = std2 %>% 
+  mutate(expected_deaths = group_pop * expected_death_rate)
+
+
+sum(na.omit(std2$deaths))/sum(na.omit(std2$expected_deaths))-1
 
 ```
 
