@@ -30,7 +30,8 @@ options(scipen = 100)
 ## Import data
 ```{r}
 
-death01 = read_excel('Jan2009-May2021 Deaths Analyzed.xlsx','FOIA JAN 2009 - November 2019')
+death01 = read_csv('Jan2009-May2021 Deaths Analyzed - Copy.csv') %>% 
+  slice(c(1:4507))
 death02 = read_csv('20211217_2019_2021_deaths.csv')
 # death data shared by Alison Guernsey at University of Iowa
 death03 = read_csv('20220208_BOP_deaths_Apr_21_Jan_22.csv')
@@ -44,12 +45,12 @@ death03 = read_csv('20220208_BOP_deaths_Apr_21_Jan_22.csv')
 
 
 death01 = death01 %>% 
-  mutate(api_actRelDate = ymd (api_actRelDate),
-         DOD = ymd(DOD))
+  mutate(api_actRelDate = lubridate::mdy(api_actRelDate),
+         DOD = lubridate::mdy(DOD))
 
 death02 = death02 %>% 
-  mutate(api_actRelDate = mdy (api_actRelDate),
-         DOD = ymd(DOD))
+  mutate(api_actRelDate = lubridate::mdy(api_actRelDate),
+         DOD = lubridate::ymd(DOD))
 
 death03 = death03 %>% 
   rename('InstID' = 'faclCode',
@@ -58,7 +59,7 @@ death03 = death03 %>%
          'api_age' = 'age',
          'api_sex' = 'sex',
          'api_race' = 'race') %>% 
-  mutate(DOD = mdy(DOD))
+  mutate(DOD = lubridate::mdy(DOD))
 
 
 
@@ -519,6 +520,8 @@ avg_pop_df = tot_pop_by_day %>%
 
 agedist = read_excel('tabula-Age_BOP_FY2015-21_cleaned.xlsx')
 
+agedist_test = read_excel('tabula-Age_BOP_FY2015-21_cleaned.xlsx')
+
 agedist = agedist %>% 
   group_by(year) %>% 
   mutate(frequency_overall = sum(Frequency)) %>% 
@@ -534,20 +537,44 @@ agedist = agedist %>%
 
 
 
-agedist1 = left_join(agedist, avg_pop_df, by = "year")
+agedist1 = left_join(agedist, avg_pop_df, by = "year") %>% 
+  mutate(group_pop = percent * average_pop)
 
 agegroups = agedist1 %>% 
   distinct(age_group) %>% 
   separate(age_group, c("min_age", "max_age"), "–", remove = FALSE) %>% mutate(min_age = as.numeric(min_age), max_age = as.numeric(max_age))
 
-
-bins = agegroups$min_age
-bins = c(bins, 10)
-age_labels = agegroups$age_group
+# 
+# bins = agegroups$min_age
+# bins = c(bins, 10)
+# age_labels = agegroups$age_group
+# 
+# deathmaster_bop = deathmaster_bop %>% 
+#   mutate(age_group = cut(api_age, breaks = bins, labels = age_labels, right = FALSE)) 
 
 deathmaster_bop = deathmaster_bop %>% 
-  mutate(age_group = cut(api_age, breaks = bins, labels = age_labels, right = FALSE)) 
-
+  rowwise() %>% 
+  mutate(age_group = case_when(
+    api_age >= 0 & api_age <=19 ~ "0–19",
+    api_age >= 20 & api_age <=24 ~ "20–24",
+    api_age >= 25 & api_age <=29 ~ "25–29",
+    api_age >= 30 & api_age <=34 ~ "30–34", 
+    api_age >= 35 & api_age <=39 ~ "35–39", 
+    api_age >= 40 & api_age <=44 ~ "40–44",
+    api_age >= 45 & api_age <=49 ~ "45–49",
+    api_age >= 50 & api_age <=54 ~ "50–54",
+    api_age >= 55 & api_age <=59 ~ "55–59",
+    api_age >= 60 & api_age <=64 ~ "60–64",
+    api_age >= 65 & api_age <=69 ~ "65–69",
+    api_age >= 70 & api_age <=74 ~ "70–74",
+    api_age >= 75 & api_age <=79 ~ "75–79",
+    api_age >= 80 & api_age <=84 ~ "80–84",
+    api_age >= 85 & api_age <=89~ "85–89",
+    api_age >= 90 & api_age <= 94 ~ "90–94",
+    TRUE ~ "not-found"))
+    
+    
+    
 
 
 ```
@@ -557,6 +584,55 @@ deathmaster_bop = deathmaster_bop %>%
 ```{r}
 
 deathmaster_bop
+
+death_year_age = deathmaster_bop %>% 
+  group_by(year, age_group) %>% 
+  summarise(deaths = n())
+
+## checks that I need to talk about jingnan too
+
+death_year_age$deaths %>% sum()
+
+nrow(deathmaster_bop)
+
+length(unique(deathmaster_bop$RegisterNum))
+
+deathmaster_bop %>% group_by(RegisterNum) %>%  count() %>% View()
+```
+
+```{r}
+
+agedist2 = left_join(agedist1, death_year_age, by = c("age_group", "year"))
+agedist2[is.na(agedist2)] <- 0
+agedist2 = agedist2 %>% 
+  mutate(mortality_per_100k = (deaths / group_pop)*100000) 
+
+df = agedist2 %>% 
+  pivot_wider(id_cols = age_group, names_from = year, values_from = mortality_per_100k)
+
+
+```
+
+```{r}
+
+ref = agedist2 %>% 
+  filter(year <2020)
+
+std = ref %>% 
+  group_by(age_group) %>% 
+  summarise(deaths_sum = sum(deaths),
+            group_pop_sum = sum(group_pop)) %>% 
+  ungroup() %>% 
+  mutate(expected_death_rate = deaths_sum / group_pop_sum)
+
+```
+
+Compare 2020 to 2015-2019
+
+
+```{r}
+yr20 = agedist2 %>% 
+  filter(year == 2020)
 
 
 ```
