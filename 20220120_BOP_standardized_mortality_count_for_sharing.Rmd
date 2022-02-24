@@ -1,19 +1,29 @@
 ---
-title: "Jingnan Fact Check"
-output: html_document
+title: "Understanding mortality rates in BOP-operated prisons during 2020-2021"
+author: Jingnan Huo and Nick McMillan
+output:
+  html_document:
+    theme: cerulean
+    code_folding: 
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    df_print: paged
+  md_document:
+    variant: markdown_github
+    toc: true
+    toc_depth: 3
 ---
 
 ```{r setup, include=FALSE}
-knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE, error = FALSE)
 ```
 
-## R Markdown
 
-This is an R Markdown document. Markdown is a simple formatting syntax for authoring HTML, PDF, and MS Word documents. For more details on using R Markdown see <http://rmarkdown.rstudio.com>.
+# Understanding mortality rates in BOP-operated prisons during 2020-2021 
+NPR obtained a database of people who died in BOP-operated prisons in through Freedom of Information Act requests filed by NPR also requests filed by Professor Alison Guernsey at University of Iowa, shared with NPR. We compared mortality rates during between 2020 and 2021 with previous years, adjusting for age. We found that mortality rates in BOP facilities in 2020 and 2021 have been higher than the five years before the pandemic.
 
-When you click the **Knit** button a document will be generated that includes both content as well as the output of any embedded R code chunks within the document. You can embed an R code chunk like this:
-
-
+### Import Libraries
 
 ```{r}
 library(tidyverse)
@@ -22,27 +32,42 @@ library(lubridate)
 library(jsonlite)
 library(purrr)
 library(janitor)
+library(kableExtra)
+library(knitr)
 
 options(scipen = 100)
+
+# Function for formatted table output
+
+output_table = function(table){
+  table %>% 
+  kable() %>% kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),font_size = 14, fixed_thead = T) %>% 
+  scroll_box(width = "100%",height =  "500px")
+  
+}
 ```
 
 
-## Import data
+### Importing death data
+
+Death data preprocessing see separate notebook in main branch
 ```{r}
+
+# death data obtained through two FOIA requests
 
 death01 = read_csv('Jan2009-May2021 Deaths Analyzed - Copy.csv') %>% 
   slice(c(1:4507))
 death02 = read_csv('20211217_2019_2021_deaths.csv')
+
 # death data shared by Alison Guernsey at University of Iowa
 death03 = read_csv('20220208_BOP_deaths_Apr_21_Jan_22.csv')
 
 ```
 
-## Clean Data
 
 ```{r}
 
-
+# Clean Data
 
 death01 = death01 %>% 
   mutate(api_actRelDate = lubridate::mdy(api_actRelDate),
@@ -65,6 +90,8 @@ death03 = death03 %>%
 
 ```
 
+These deaths include privately operated facilities before 2019. We exclude them from the analysis because a) we don't have the post 2019 deaths in privately operated facilities, and b) situations in privately operated facilities are opaque, we have less on-the-ground reporting for them and don't know how similar they are to BOP-operated facilities.
+
 
 ```{r}
 
@@ -72,27 +99,39 @@ death03 = death03 %>%
 deathmasterraw = bind_rows(death01, death02, death03)
 ```
 
-# cleaning up the columns as well as dropping duplicates - some of the requests have overlapping timeframes.
+
 
 ```{r}
 
+# cleaning up the columns as well as dropping duplicates - some of the requests have overlapping timeframes.
+
 deathmaster = deathmasterraw %>% 
-  select('InstID','RegisterNum','DOD','api_age','api_sex','api_race')
-
-# Look at duplicates, there are 8
-deathmaster[duplicated(deathmaster),]
-
-deathmaster  = deathmaster %>% 
+  select('InstID','RegisterNum','DOD','api_age','api_sex','api_race') %>%
   distinct() %>% 
-  mutate (year = year(DOD))
+  mutate(year = year(DOD))
 
+```
+
+```{r}
 deathmaster %>% 
   group_by(year) %>% 
   count() %>% 
-  View()
+  output_table()
 
 
 ```
+
+
+### Importing BOP prison population data
+Sources - 
+- JSON files collected by UCLA's COVID Behind Bars project
+- Bureau of Prisons
+
+
+#### UCLA's datasets
+UCLA ran a scraper that collected json files from the BOP website.
+
+
 
 ```{r}
 
@@ -100,12 +139,11 @@ path <- "./ucla_files"
 files <- dir(path, pattern = "*.json")
 fullfilesnames = list.files(path, pattern = "*json", full.names = TRUE)
 
-historical_fed_pop = files[1:129]
-fed_pop = files[130:296]
 
-myJSON <- lapply(fullfilesnames, function(x) fromJSON(x)) # a list in which each element is one of your original JSON files
+myJSON <- lapply(fullfilesnames, function(x) fromJSON(x)) # a list in which each element is one of the original JSON files
 
-df_all_json = tibble()
+#
+df_all_json = tibble() # create a nested data frame that combines all of the data frame
 
 for (i in 1:length(myJSON)){
   
@@ -115,29 +153,35 @@ for (i in 1:length(myJSON)){
   
   df_all_json = bind_rows(df_all_json, df)
   
-  
-  
 }
 
-
+# clean the data frame
 df_all_json = df_all_json %>% 
   mutate(DATEMODIFIED = mdy(DATEMODIFIED)) %>% 
   mutate(year = year(DATEMODIFIED))
-  
 
+```
+  
+```{r}
+
+#extract population totals
 mainframe = df_all_json %>% 
   select(TOTALPOPULATION, BOPTOTAL, PRIVATETOTAL, DATEMODIFIED, year) %>% 
   rename(total_population = TOTALPOPULATION, bop_population = BOPTOTAL, private_population = PRIVATETOTAL, date = DATEMODIFIED ) %>% 
   mutate(population = as.numeric(bop_population))
   
+```
 
+
+```{r}
+
+# extract the institution codes
 bopfacmaster = tibble() 
 
 for (i in 1:nrow(df_all_json)){
   
-  df = df_all_json[[9]][[i]]
-  year = df_all_json[[17]][[i]]
-  #print(year)
+  df = df_all_json[[9]][[i]] # isolate the nested data frame
+  year = df_all_json[[17]][[i]] 
   date_modified = df_all_json[[8]][[i]]
   
   df = df %>% 
@@ -147,65 +191,44 @@ for (i in 1:nrow(df_all_json)){
   
   
 }
-  
 
-
-
-
-```
-
-
-## Examine bopfacmaster
-```{r}
-
-bopfacmaster_duplicated = bopfacmaster[duplicated(bopfacmaster),]
-
-counter = 0 
-for (i in 1:length(df_all_json)){
-  
-  df = df_all_json[[9]][[i]]
-  counter = counter + nrow(df)
-  
-  
-}
-
-counter
-  
-
-```
-
-```{r}
-
-bopfacmaster_unqiue = bopfacmaster %>% 
+bopfacmaster = bopfacmaster %>% 
   distinct()
 
 
 ```
 
+```{r}
+glimpse(bopfacmaster) 
+```
+
 
 ```{r}
 
-bopfacmaster %>% 
+instcnt = bopfacmaster %>% 
   distinct(year, code) %>% 
   group_by(year, code) %>% 
   count() %>%
   ungroup() %>% 
   group_by(year) %>% 
-  count() %>% 
-  View()
+  count() 
 
-bopfacmaster_2021 = bopfacmaster %>% 
-  filter(year == 2021)
+# a facility is missing in 2022. But we aren't including them in the analysis.
+instcnt %>% 
+  output_table()
 
-bopfacmaster_2022 = bopfacmaster %>% 
-  filter(year == 2022)
 
-missing_bop_code_2022 = anti_join(bopfacmaster_2021, bopfacmaster_2022, by = "code") # 	NYM
 
+
+
+
+```
+
+
+
+```{r}
 bopcodes = unique(bopfacmaster$code)
-
-
-
+length(bopcodes) # it looks like it's the same 122 facilities throughout the years.
 ```
 
 
@@ -215,31 +238,54 @@ bopcodes = unique(bopfacmaster$code)
 deathmaster_bop = deathmaster %>% 
   filter(InstID %in% bopcodes)
 
-unique(deathmaster_bop$InstID)
-
-bopcodes[!(bopcodes %in% unique(deathmaster_bop$InstID))]
-
-
 ```
-## Ready to check BOP side
+
+
+```{r}
+# check if any BOP facility hasn't had any deaths
+bopcodes[!(bopcodes %in% unique(deathmaster_bop$InstID))]
+```
+
+
+#### BOP's datasets
+BOP provided the population data broken down by age groups to NPR.<br>
+The population totals supplement the json population count, and the age group distribution is used to calculate standardized mortality rate. BOP says these reports aren't necessarily on September 30, but a certain day in September that's close to it
 
 
 ```{r}
 
 agedist = read_excel('tabula-Age_BOP_FY2015-21_cleaned.xlsx')
 
+agedist = agedist %>% 
+  group_by(year) %>% 
+  mutate(frequency_overall = sum(Frequency)) %>% 
+  ungroup() %>% 
+  # calculate population percentage from raw numbers.
+  mutate( percent = Frequency / frequency_overall) %>%
+  # deselect the original percent column that was rounded
+  select(-Percent) %>% 
+  clean_names() %>% 
+  rename(age_group = age) %>% 
+  mutate(age_group = str_replace_all(age_group, ' ','')) %>% 
+  mutate(age_group = str_replace_all(age_group, '-','–')) %>% 
+  mutate(age_group = str_replace_all(age_group, '<=19','0–19'))
+
+agedist %>% 
+  output_table()
+
 ```
 
 ```{r}
-
+# calculate population totals from the BOP data set 
 
 reportcnt = agedist %>% 
   group_by(year) %>% 
-  summarise(population = sum(Frequency)) %>% 
+  summarise(population = sum(frequency)) %>% 
   ungroup() %>% 
   rowwise() %>% 
   mutate(date_text = paste0('09/30/', toString(year))) %>% 
   mutate(date = mdy(date_text))
+
 ```
 
 ```{r}
@@ -249,7 +295,12 @@ reportcnt = agedist %>%
 popdf = full_join(mainframe, reportcnt) %>% 
   distinct()
 
+popdf %>% 
+  output_table()
+
 ```
+
+
 ```{r}
 # check to see if the two datasets form a smooth curve. 
 
@@ -259,12 +310,18 @@ ggplot()+
 
 
 ```
+
+### Computing annualized average prison population
+
+Given prison population decreased significantly over the course of 2020 and 2021, we calculate an annualized average population for every year using all accessible datapoints through out the year. We use linear interpolation and extrapolation to fill in the times when there's no data available.
+
+
+#### Interpolate/extrapolate Jan 1 and Dec 31 values
+To calculate and annualized average, we need to make sure that every year has values for the first and last day of the year. This datapoint doesn't exist for every year, so we use interpolation and extrapolation to fill in the blanks
+
 ```{r}
 interpolate_population = function(df, year_choice, mode){
   
-  # df = popdf
-  # year_choice = 2016
-  # mode = "dec"
   
   df_current = df %>% 
   filter(year == year_choice) %>% 
@@ -376,6 +433,8 @@ return(df_edge_result)
 
 ```{r}
 
+# compute the interpolated or extrapolated values for Jan 1 and Dec. 31 of each year
+
 years  = c(2015:2021)
 
 
@@ -383,7 +442,7 @@ df_bookends = tibble()
 
 for (year_choice in years){
   
-  ## Interpolate for Dec 31
+  # Interpolate for Dec 31 -----------------------
   
   check_dec_date = popdf %>% 
     filter(year == year_choice) %>% 
@@ -402,7 +461,9 @@ for (year_choice in years){
 
 
   
-  ## Interpolate for Jan 1, for all months except for 2015 because there is not data for it, will need to extrapolate
+  
+  ## Interpolate for Jan 1. However, for 2015 since we don't have data for 2014 we will need to extrapolate
+
 for (year_choice in years){
   
   check_jan_date = popdf %>% 
@@ -411,6 +472,7 @@ for (year_choice in years){
     slice(1) %>% 
     pull(date)
   
+  # extrapolate for 2015
   if (year_choice == 2015) {
     
     last_day_this_year_date = popdf %>% 
@@ -456,6 +518,7 @@ for (year_choice in years){
     
   }
   
+  # interpolate for the rest
   else{
     
     if (check_dec_date != paste0(year_choice, "-01-01")){
@@ -473,7 +536,7 @@ for (year_choice in years){
 df_bookends = df_bookends %>% 
   mutate(year = year(date))
 
-popdf1 = bind_rows(popdf, df_bookends)
+
 
   
 
@@ -481,16 +544,15 @@ popdf1 = bind_rows(popdf, df_bookends)
 
 
 ```{r}
-# graph this out
-ggplot()+
-  geom_line(data = mainframe, aes(x = date, y = population))+
-  geom_point(data = reportcnt, aes(x = date, y = population))+
-  geom_point(data = df_bookends, aes(x = date, y = population, color = "red", label = "extrap and interp"))
-
-
+# add the coomputed bookends to the population counts
+popdf1 = bind_rows(popdf, df_bookends)
 ```
-```{r}
+
 #### Calcuate an average yearly population with existing data points
+
+
+```{r}
+
 
 tot_pop_by_day = popdf1 %>% 
   arrange(date) %>% 
@@ -517,40 +579,31 @@ avg_pop_df = tot_pop_by_day %>%
 ```
 
 ```{r}
+avg_pop_df %>% 
+  output_table()
+```
 
-agedist = read_excel('tabula-Age_BOP_FY2015-21_cleaned.xlsx')
+### Calculate standardized mortality ratio
+#### Importing age percentage breakdown of prison population, provided by the BOP
 
-agedist_test = read_excel('tabula-Age_BOP_FY2015-21_cleaned.xlsx')
-
-agedist = agedist %>% 
-  group_by(year) %>% 
-  mutate(frequency_overall = sum(Frequency)) %>% 
-  ungroup() %>% 
-  mutate( percent = Frequency / frequency_overall) %>% 
-  select(-Percent) %>% 
-  clean_names() %>% 
-  rename(age_group = age) %>% 
-  mutate(age_group = str_replace_all(age_group, ' ','')) %>% 
-  mutate(age_group = str_replace_all(age_group, '-','–')) %>% 
-  mutate(age_group = str_replace_all(age_group, '<=19','0–19'))
-  
-
-
+```{r}
 
 agedist1 = left_join(agedist, avg_pop_df, by = "year") %>% 
   mutate(group_pop = percent * average_pop)
 
+agedist1 %>% 
+  output_table()
+
+```
+
+#### Categorize age groups of each death
+
+
+```{r}
+
 agegroups = agedist1 %>% 
   distinct(age_group) %>% 
   separate(age_group, c("min_age", "max_age"), "–", remove = FALSE) %>% mutate(min_age = as.numeric(min_age), max_age = as.numeric(max_age))
-
-# 
-# bins = agegroups$min_age
-# bins = c(bins, 10)
-# age_labels = agegroups$age_group
-# 
-# deathmaster_bop = deathmaster_bop %>% 
-#   mutate(age_group = cut(api_age, breaks = bins, labels = age_labels, right = FALSE)) 
 
 deathmaster_bop = deathmaster_bop %>% 
   rowwise() %>% 
@@ -570,54 +623,72 @@ deathmaster_bop = deathmaster_bop %>%
     api_age >= 75 & api_age <=79 ~ "75–79",
     api_age >= 80 & api_age <=84 ~ "80–84",
     api_age >= 85 & api_age <=89~ "85–89",
-    api_age >= 90 & api_age <= 94 ~ "90–94",
+    # since BOP's age frequency distribution did not include people aged 95 and above, we assume that they are counted in the highest age category possible
+    api_age >= 90 ~ "90–94",
     TRUE ~ "not-found"))
     
-    
+deathmaster_bop %>% 
+  filter(api_age > 95)  %>% 
+  output_table()
     
 
 
 ```
 
+#### Calculate Mortality year to year
+https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3406211/
 
 
 ```{r}
 
-deathmaster_bop
+
 
 death_year_age = deathmaster_bop %>% 
   group_by(year, age_group) %>% 
   summarise(deaths = n())
 
-## checks that I need to talk about jingnan too
 
-death_year_age$deaths %>% sum()
-
-nrow(deathmaster_bop)
-
-length(unique(deathmaster_bop$RegisterNum))
-
-deathmaster_bop %>% group_by(RegisterNum) %>%  count() %>% View()
 ```
 
 ```{r}
 
 agedist2 = left_join(agedist1, death_year_age, by = c("age_group", "year"))
 agedist2[is.na(agedist2)] <- 0
+
+
+# calculate death rate for each age group
 agedist2 = agedist2 %>% 
   mutate(mortality_per_100k = (deaths / group_pop)*100000) 
 
-df = agedist2 %>% 
-  pivot_wider(id_cols = age_group, names_from = year, values_from = mortality_per_100k)
+agedist2 %>% 
+  output_table()
 
 
 ```
+
+```{r}
+df = agedist2 %>% 
+  pivot_wider(id_cols = age_group, names_from = year, values_from = mortality_per_100k)
+
+df %>% 
+  output_table()
+
+```
+
+### Compare mortality rates during pandemic and five years prior
+#### 2020 to 2015-2019
+Using population and mortality between 2015 and 2019 as reference population.<br>
+We have also considered using US population as a reference population. Similar to previous studies, we found that expected deaths exceed actual deaths when use the US population as a reference. One of the reasons can be that many causes of death in general population, like car accidents, don't exist in incarcerated environments.
+
 
 ```{r}
 
 ref = agedist2 %>% 
   filter(year <2020)
 
+```
+
+```{r}
 std = ref %>% 
   group_by(age_group) %>% 
   summarise(deaths_sum = sum(deaths),
@@ -627,7 +698,6 @@ std = ref %>%
 
 ```
 
-Compare 2020 to 2015-2019
 
 
 ```{r}
@@ -635,15 +705,25 @@ yr20 = agedist2 %>%
   filter(year == 2020) %>% 
   select(age_group, group_pop, deaths)
 
+
+```
+
+
+
+```{r}
+
 std1 = left_join(std, yr20, by = "age_group")
 std1 = std1 %>% 
   mutate(expected_deaths = group_pop * expected_death_rate)
 
 
-sum(na.omit(std1$deaths))/sum(na.omit(std1$expected_deaths))-1
-
-
 ```
+
+```{r}
+sum(na.omit(std1$deaths))/sum(na.omit(std1$expected_deaths))-1
+```
+
+#### Compare 2021  to 2015-2019
 
 ```{r}
 
@@ -651,12 +731,18 @@ yr21 = agedist2 %>%
   filter(year == 2021) %>% 
   select(age_group, group_pop, deaths)
 
+```
+
+```{r}
 std2 = left_join(std, yr21, by = "age_group")
 std2 = std2 %>% 
   mutate(expected_deaths = group_pop * expected_death_rate)
 
 
-sum(na.omit(std2$deaths))/sum(na.omit(std2$expected_deaths))-1
+```
 
+```{r}
+
+sum(na.omit(std2$deaths))/sum(na.omit(std2$expected_deaths))-1
 ```
 
