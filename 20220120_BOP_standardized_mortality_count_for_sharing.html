@@ -9,7 +9,7 @@
 <meta http-equiv="X-UA-Compatible" content="IE=EDGE" />
 
 
-<meta name="author" content="Jingnan Huo and Nick McMillan" />
+<meta name="author" content="Huo Jingnan and Nick McMillan" />
 
 
 <title>Understanding mortality rates in BOP-operated prisons during 2020-2021</title>
@@ -3001,7 +3001,7 @@ div.tocify {
 
 
 <h1 class="title toc-ignore">Understanding mortality rates in BOP-operated prisons during 2020-2021</h1>
-<h4 class="author">Jingnan Huo and Nick McMillan</h4>
+<h4 class="author">Huo Jingnan and Nick McMillan</h4>
 
 </div>
 
@@ -8655,11 +8655,11 @@ for (year_choice in years){
 
 df_bookends = df_bookends %&gt;% 
   mutate(year = year(date))</code></pre>
-<pre class="r"><code># add the coomputed bookends to the population counts
+<pre class="r"><code># add the computed bookends to the population counts
 popdf1 = bind_rows(popdf, df_bookends)</code></pre>
 </div>
-<div id="calcuate-an-average-yearly-population-with-existing-data-points" class="section level4">
-<h4>Calcuate an average yearly population with existing data points</h4>
+<div id="calculate-an-average-yearly-population-with-existing-data-points" class="section level4">
+<h4>Calculate an average yearly population with existing data points</h4>
 <pre class="r"><code>tot_pop_by_day = popdf1 %&gt;% 
   arrange(date) %&gt;% 
   group_by(year) %&gt;% 

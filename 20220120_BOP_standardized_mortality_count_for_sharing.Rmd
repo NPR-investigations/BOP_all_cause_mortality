@@ -1,6 +1,6 @@
 ---
 title: "Understanding mortality rates in BOP-operated prisons during 2020-2021"
-author: Jingnan Huo and Nick McMillan
+author: Huo Jingnan and Nick McMillan
 output:
   html_document:
     theme: cerulean
@@ -544,11 +544,11 @@ df_bookends = df_bookends %>%
 
 
 ```{r}
-# add the coomputed bookends to the population counts
+# add the computed bookends to the population counts
 popdf1 = bind_rows(popdf, df_bookends)
 ```
 
-#### Calcuate an average yearly population with existing data points
+#### Calculate an average yearly population with existing data points
 
 
 ```{r}
