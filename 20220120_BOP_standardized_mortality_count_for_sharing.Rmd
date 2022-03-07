@@ -658,7 +658,8 @@ agedist2[is.na(agedist2)] <- 0
 
 # calculate death rate for each age group
 agedist2 = agedist2 %>% 
-  mutate(mortality_per_100k = (deaths / group_pop)*100000) 
+  mutate(mortality_per_100k = (deaths / group_pop)*100000,
+         mortality_rate = deaths/group_pop) 
 
 agedist2 %>% 
   output_table()
@@ -695,7 +696,8 @@ std = ref %>%
   summarise(deaths_sum = sum(deaths),
             group_pop_sum = sum(group_pop)) %>% 
   ungroup() %>% 
-  mutate(expected_death_rate = deaths_sum / group_pop_sum)
+  mutate(expected_death_rate = deaths_sum / group_pop_sum,
+         per_100k = expected_death_rate*100000)
 
 ```
 
@@ -704,7 +706,7 @@ std = ref %>%
 ```{r}
 yr20 = agedist2 %>% 
   filter(year == 2020) %>% 
-  select(age_group, group_pop, deaths)
+  select(age_group, group_pop, deaths, mortality_rate)S
 
 
 ```
@@ -724,19 +726,23 @@ std1 = std1 %>%
 sum(na.omit(std1$deaths))/sum(na.omit(std1$expected_deaths))-1
 ```
 
+```{r}
+sum(na.omit(std1$expected_deaths))
+```
+
 #### Compare 2021  to 2015-2019
 
 ```{r}
 
 yr21 = agedist2 %>% 
   filter(year == 2021) %>% 
-  select(age_group, group_pop, deaths)
+  select(age_group, group_pop, deaths, mortality_rate)
 
 ```
 
 ```{r}
-std2 = left_join(std, yr21, by = "age_group")
-std2 = std2 %>% 
+std21 = left_join(std, yr21, by = "age_group")
+std21 = std21 %>% 
   mutate(expected_deaths = group_pop * expected_death_rate)
 
 
@@ -744,6 +750,127 @@ std2 = std2 %>%
 
 ```{r}
 
-sum(na.omit(std2$deaths))/sum(na.omit(std2$expected_deaths))-1
+sum(na.omit(std21$deaths))/sum(na.omit(std21$expected_deaths))-1
+```
+
+#### Combining 2020 and 2021
+
+```{r}
+
+((sum(na.omit(std21$deaths)) + sum(na.omit(std1$deaths)))/2)/((sum(na.omit(std21$expected_deaths)) + sum(na.omit(std1$expected_deaths)))/2) - 1
+
+```
+
+
+
+### Comparing age-adjusted mortality rates
+Using age distribution in 2015-2019 as weights
+
+```{r}
+# examining age distribution of all years
+years = c(2015:2021)
+
+for(year in years){
+  
+  plot = agedist2 %>% 
+    filter(year == year) %>% 
+    ggplot(aes(x = age_group, percent, fill= age_group))+
+    geom_bar(stat = "identity")+
+    ggtitle(paste0(year))
+  
+  print(plot)
+  
+  
+}
+
+
+```
+
+```{r}
+# calculating the age-specific death rates in the refernce population - 2015-2019
+
+std = ref %>% 
+  group_by(age_group) %>% 
+  summarise(group_pop = sum(group_pop), average_pop = sum(average_pop), deaths = sum(deaths))
+
+
+
+```
+
+
+```{r}
+std = std %>% 
+  mutate(death_rate = deaths / group_pop,
+         pop_pct = group_pop / average_pop,
+         weighted_rate = death_rate * pop_pct)
+
+```
+
+
+```{r}
+
+std %>% 
+  output_table()
+
+```
+```{r}
+
+sum(std$weighted_weight)*100000
+```
+#### Calculating age-adjusted death rate in 2020
+
+```{r}
+
+yr20_3 =  left_join(yr20, std, by = "age_group") %>% 
+  mutate(weighted_rate = mortality_rate * pop_pct)
+
+yr20_3 %>% 
+  output_table()
+
+
+```
+
+```{r}
+
+sum(yr20_3$weighted_rate)*100000
+
+
+```
+
+```{r}
+# difference between 2020 and 2015-2019
+
+sum(yr20_3$weighted_rate)/sum(std$weighted_rate)-1
+
+```
+#### calculating 2021
+
+```{r}
+
+yr21 = yr21 %>% 
+  mutate(mortality_rate = deaths / group_pop)
+
+```
+
+```{r}
+
+yr21_3 = left_join(yr21, std, by = "age_group")
+yr21_3  = yr21_3 %>% 
+  mutate(weighted_rate = mortality_rate * pop_pct)
+
+
+yr21_3 %>% output_table()
+
+```
+
+```{r}
+sum(yr21_3$weighted_rate)
+
+```
+
+```{r}
+# difference between 2021 and 2015-2019
+sum(yr21_3$weighted_rate)/sum(std$weighted_rate)-1
+
 ```
 
