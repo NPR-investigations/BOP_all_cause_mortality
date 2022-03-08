@@ -103,12 +103,13 @@ deathmasterraw = bind_rows(death01, death02, death03)
 
 ```{r}
 
-# cleaning up the columns as well as dropping duplicates - some of the requests have overlapping timeframes.
+# cleaning up the columns as well as dropping duplicates - some of the requests have overlapping time frames.
 
 deathmaster = deathmasterraw %>% 
   select('InstID','RegisterNum','DOD','api_age','api_sex','api_race') %>%
   distinct() %>% 
-  mutate(year = year(DOD))
+  mutate(year = year(DOD)) %>% 
+  filter(year >= 2015)
 
 ```
 
@@ -641,8 +642,6 @@ https://www.ncbi.nlm.nih.gov/pmc/articles/PMC3406211/
 
 ```{r}
 
-
-
 death_year_age = deathmaster_bop %>% 
   group_by(year, age_group) %>% 
   summarise(deaths = n())
@@ -706,7 +705,7 @@ std = ref %>%
 ```{r}
 yr20 = agedist2 %>% 
   filter(year == 2020) %>% 
-  select(age_group, group_pop, deaths, mortality_rate)S
+  select(age_group, group_pop, deaths, mortality_rate)
 
 
 ```
@@ -747,6 +746,12 @@ std21 = std21 %>%
 
 
 ```
+
+```{r}
+sum(std21$expected_deaths)
+```
+
+
 
 ```{r}
 
@@ -815,7 +820,7 @@ std %>%
 ```
 ```{r}
 
-sum(std$weighted_weight)*100000
+sum(std$weighted_rate)*100000
 ```
 #### Calculating age-adjusted death rate in 2020
 
@@ -843,6 +848,51 @@ sum(yr20_3$weighted_rate)*100000
 sum(yr20_3$weighted_rate)/sum(std$weighted_rate)-1
 
 ```
+```{r}
+# calculate risk ratio confidence intervals for each age group
+```
+
+
+```{r}
+confidence_interval <- function(df,event_treatment, no_event_treatment, event_control, no_event_control){
+  df_result = df %>% 
+  mutate(rr = (df[[event_treatment]]/(df[[event_treatment]]+df[[event_control]])) / (df[[no_event_treatment]]/(df[[no_event_treatment]] + df[[no_event_control]]))) %>% 
+  mutate(total_exposed = df[[event_treatment]]+df[[event_control]],
+         total_control = df[[no_event_treatment]] + df[[no_event_control]],
+         block1 = ((total_exposed - df[[event_treatment]])/df[[event_treatment]])/total_exposed,
+         block2 =  ((total_control - df[[no_event_treatment]])/df[[no_event_treatment]]) / total_control,
+         sqrt_blocks = sqrt(block1 + block2),
+         ci_lower = exp(log(rr) - (1.96*sqrt_blocks)),
+         ci_upper = exp(log(rr) + (1.96*sqrt_blocks))) %>% 
+    select(-total_exposed, total_control, -block1, -block2, -sqrt_blocks)
+ return(df_result )
+  
+}
+```
+
+
+```{r}
+
+ref_ci = std %>% 
+  select(age_group, group_pop, deaths) %>% 
+  mutate(alive = group_pop - deaths) %>% 
+  select(-group_pop) %>% 
+  rename(ref_deaths = deaths, ref_alive = alive)
+
+yr20_ci = yr20_3 %>% 
+  select(age_group, group_pop.x, deaths.x) %>% 
+  rename(group_pop_20 = group_pop.x, deaths_20 = deaths.x) %>% 
+  mutate(alive_20 = group_pop_20 - deaths_20) %>% 
+  select(-group_pop_20)
+
+
+ci_20 = full_join(ref_ci, yr20_ci) %>% 
+  confidence_interval( "deaths_20", "ref_deaths", "alive_20", "ref_alive") 
+
+ci_20 %>% output_table()
+
+```
+
 #### calculating 2021
 
 ```{r}
@@ -874,3 +924,23 @@ sum(yr21_3$weighted_rate)/sum(std$weighted_rate)-1
 
 ```
 
+
+```{r}
+# calculating confidence intervals
+
+
+yr21_ci = yr21_3 %>% 
+  select(age_group, group_pop.x, deaths.x) %>% 
+  rename(group_pop_21 = group_pop.x, deaths_21 = deaths.x) %>% 
+  mutate(alive_21 = group_pop_21 - deaths_21) %>% 
+  select(-group_pop_21)
+
+
+ci_21 = full_join(ref_ci, yr21_ci) %>% 
+  confidence_interval("deaths_21", "ref_deaths", "alive_21", "ref_alive")
+
+
+ci_21 %>% 
+  output_table()
+
+```
