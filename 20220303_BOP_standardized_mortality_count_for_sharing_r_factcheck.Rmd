@@ -781,7 +781,8 @@ for(year in years){
     filter(year == year) %>% 
     ggplot(aes(x = age_group, percent, fill= age_group))+
     geom_bar(stat = "identity")+
-    ggtitle(paste0(year))
+    ggtitle(paste0(year)) + 
+    theme(axis.text.x=element_text(angle = 45, hjust = 1))
   
   print(plot)
   
